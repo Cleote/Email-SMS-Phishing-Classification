@@ -1,8 +1,15 @@
 import os
 import nltk
+
+# You may need to download these first:
+nltk.download('words', quiet=True)
+nltk.download('brown', quiet=True)
+nltk.download('punkt_tab', quiet=True)
+
 import torch
 import pandas as pd
 import gradio as gr
+from txt_extraction.text_body_features import has_url
 from datetime import datetime
 from load_model import load_models
 from temp_cleanup import cleanup_temp
@@ -21,19 +28,15 @@ os.environ['GRADIO_TEMP_DIR'] = temp_dir
 
 # Cleanup function for temporary files
 def clear_temp_files():
-    """Clear temporary files."""
-    cleanup_temp(os.environ['GRADIO_TEMP_DIR'])
+    """Check if there are any temporary files in the temp directory."""
+    temp_path = os.environ.get('GRADIO_TEMP_DIR')
+    if os.listdir(temp_path):
+        """Clear temporary files."""
+        cleanup_temp(temp_path)
+        return gr.update(value="Temporary files cleared successfully.")
+    else:
+        return gr.update(value="Temp folder is empty. No files to clear.")
     
-    # Update both the status_text and the gr.Markdown component
-    return (
-        gr.update(value="Temporary files cleared successfully.", label="Temp Cleanup", visible=True),
-        gr.update(visible=True)  # Make the gr.Markdown component visible
-    )
-    
-# You may need to download these first:
-nltk.download('words', quiet=True)
-nltk.download('brown', quiet=True)
-nltk.download('punkt_tab', quiet=True)
 
 # Load models
 load_text_model = torch.load("models/phoBERT-base-v2-Text-16k-v0.1-hf-do0.5/phobert_text_phishing_model_best.pt",
@@ -106,11 +109,24 @@ def format_row_count(row_count):
     else:
         return str(row_count)
     
-def check_length(text):
-    if len(text.strip().split()) < 10:
-        return "<span style='color:red;'>Short sentences may lead to inaccurate predictions.</span>"
+def check_input(text, input_type):
+    if not text:
+        return (
+            "",
+            gr.update(interactive=False)
+        )
+    elif input_type == "Text" and len(text.strip()) < 50:
+        return (
+            "<span style='color:orange;'>Caution: Inputs with low character count may lead to inaccurate predictions. Take the following prediction result with scrutiny.</span>",
+            gr.update(interactive=True)
+        )
+    elif input_type == "URL" and not has_url(text):
+        return (
+            "<span style='color:red;'>Warning: URL input type selected, but no URL was detected in the input. Please Enter a valid URL format: \"www[dot]example[dot]com\" </span>",
+            gr.update(interactive=False)  # Disable button if no URL
+        )
     else:
-        return ""
+        return ("", gr.update(interactive=True))  # Enable button
 
 def process_input(model_type, input_text):
     model_type = model_type.lower()
@@ -235,12 +251,13 @@ with gr.Blocks(css=
     with gr.Tabs():
         with gr.Tab("Single Input"):
             gr.Markdown("Enter text or URL for prediction:")
-            user_input = gr.Textbox(label="Input Text or URL", placeholder="Type here...", elem_id="user_input", live=True)
             warning = gr.Markdown("")
-            user_input.change(fn=check_length, inputs=user_input, outputs=warning)
-            
+            user_input = gr.Textbox(label="Input Text or URL", placeholder="Type here...", elem_id="user_input", lines=4)
             single_output = gr.Textbox(label="Prediction Result", elem_id="single_output")
-            predict_btn = gr.Button("Predict", elem_classes="button")
+            predict_btn = gr.Button("Predict", elem_classes="button", interactive=False)
+            
+            user_input.change(fn=check_input, inputs=[user_input, model_selector], outputs=[warning, predict_btn])
+            model_selector.change(fn=check_input, inputs=[user_input, model_selector], outputs=[warning, predict_btn])
             
         with gr.Tab("Batch Input"):
             gr.Markdown("Upload a CSV file for batch processing:")
@@ -256,8 +273,7 @@ with gr.Blocks(css=
             demo.load(fn=update_history_files, inputs=[], outputs=history_files)
     
     with gr.Row(elem_classes="status-clear-container"):
-        status_text = gr.Textbox(visible=False, label="Cleanup Status", elem_id="status_text")
-        markdown_break = gr.Markdown("<div><br></div>", visible=False)
+        clear_confirm = gr.Markdown("")
         clear_temp_btn = gr.Button("Clear Temporary Files", elem_id="clear_temp_btn")
     
     # Predict single input
@@ -267,7 +283,7 @@ with gr.Blocks(css=
     process_file_btn.click(fn=process_csv, inputs=[file_input, model_selector], outputs=file_output)
 
     # Clear temporary files
-    clear_temp_btn.click(fn=clear_temp_files, inputs=[], outputs=[status_text, markdown_break])
+    clear_temp_btn.click(fn=clear_temp_files, inputs=[], outputs=clear_confirm)
     
     gr.Markdown("<div style='text-align: center; margin-top: 20px;'>Demo được tạo bởi sinh viên Trần Minh Tâm</div>")
     
