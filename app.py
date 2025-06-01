@@ -122,11 +122,17 @@ def check_input(text, input_type):
         )
     elif input_type == "URL" and not has_url(text):
         return (
-            "<span style='color:red;'>Warning: URL input type selected, but no URL was detected in the input. Please Enter a valid URL format: \"www[dot]example[dot]com\" </span>",
+            "<span style='color:red;'>Warning: URL input type selected, but no URL was detected in the input. Please Enter a valid URL format: \"www․example․com\" </span>",
             gr.update(interactive=False)  # Disable button if no URL
         )
     else:
         return ("", gr.update(interactive=True))  # Enable button
+    
+def check_file_input(file):
+    if file is None:
+        return gr.update(interactive=False) # Disable button if no file is uploaded
+    else:
+        return gr.update(interactive=True) # Enable button
 
 def process_input(model_type, input_text):
     model_type = model_type.lower()
@@ -263,7 +269,10 @@ with gr.Blocks(css=
             gr.Markdown("Upload a CSV file for batch processing:")
             file_input = gr.File(label="Upload CSV File", file_types=[".csv"])
             file_output = gr.File(label="Download Results")
-            process_file_btn = gr.Button("Process CSV File", elem_classes="button")
+            process_file_btn = gr.Button("Process CSV File", elem_classes="button", interactive=False)
+            
+            file_input.change(fn=check_file_input, inputs=file_input, outputs=process_file_btn)
+            model_selector.change(fn=check_file_input, inputs=file_input, outputs=process_file_btn)
             
         with gr.Tab("History"):
             gr.Markdown("Download previously generated files:")
